@@ -80,19 +80,19 @@ class ChatRequest(BaseModel):
 # ─────────────────────────────────────────────────────────────
 @app.get("/healthz")
 def healthz():
-    """Liveness probe — process còn sống không?
+    # Nếu service đang shutdown dần thì báo 503
+    if shutdown_guard.draining:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "draining"},
+        )
 
-    TODO (CP1 + CP4):
-      - Đang tắt dần (``shutdown_guard.draining``) → trả
-        ``JSONResponse(status_code=503, content={"status": "draining"})``
-      - Bình thường → ``{"status": "ok", "service": SERVICE_NAME,
-        "version": SERVICE_VERSION}`` (mặc định FastAPI trả 200).
-
-    Endpoint này phải **nhẹ**: không gọi Redis, không query DB. Nó chỉ trả
-    lời câu hỏi "có cần restart container này không?". Nếu nó phụ thuộc
-    Redis, Redis chết một nhịp là cả cụm container bị restart theo.
-    """
-    raise NotImplementedError("TODO (CP1/CP4): cài đặt /healthz")
+    # Bình thường chỉ trả trạng thái process
+    return {
+        "status": "ok",
+        "service": SERVICE_NAME,
+        "version": SERVICE_VERSION,
+    }
 
 
 @app.get("/readyz")
