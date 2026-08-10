@@ -97,17 +97,22 @@ def healthz():
 
 @app.get("/readyz")
 def readyz(store: ChatStore = Depends(get_store)):
-    """Readiness probe — đã sẵn sàng nhận traffic chưa?
+    if shutdown_guard.draining:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "draining"},
+        )
 
-    TODO (CP4):
-      - Đang tắt dần → 503 ``{"status": "draining"}``
-      - ``store.ping()`` False → 503 ``{"status": "not ready", "redis": False}``
-      - Ngược lại → ``{"status": "ready", "redis": True}``
+    if not store.ping():
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not ready", "redis": False},
+        )
 
-    Khác /healthz ở chỗ: endpoint này ĐƯỢC PHÉP kiểm tra dependency. Load
-    balancer dùng nó để quyết định có đẩy request vào instance này không.
-    """
-    raise NotImplementedError("TODO (CP4): cài đặt /readyz")
+    return {
+        "status": "ready",
+        "redis": True,
+    }
 
 
 # ─────────────────────────────────────────────────────────────
@@ -154,7 +159,36 @@ def chat(
     ``client_id`` do ``verify_bearer_token`` trả về, nên request không có
     token hợp lệ sẽ dừng ở 401 trước khi chạm vào bất cứ dòng nào ở đây.
     """
-    raise NotImplementedError("TODO (CP3/CP4): cài đặt /chat")
+    bucket.consume(client_id)
+    guard.check(client_id)
+
+    history = store.history(client_id)
+    result = generate_reply(payload.message, history)
+
+    store.add_turn(client_id, "user", payload.message)
+    store.add_turn(client_id, "assistant", result["text"])
+
+    guard.record(client_id, result["usd_cost"])
+
+    emit(
+        "chat_completed",
+        client_id=client_id,
+        prompt_tokens=result["prompt_tokens"],
+        completion_tokens=result["completion_tokens"],
+        usd_cost=result["usd_cost"],
+    )
+
+    return {
+        "reply": result["text"],
+        "client_id": client_id,
+        "turns_before": len(history),
+        "usd_cost": result["usd_cost"],
+        "usage": {
+            "prompt": result["prompt_tokens"],
+            "completion": result["completion_tokens"],
+        },
+    }
+
 
 
 if __name__ == "__main__":
