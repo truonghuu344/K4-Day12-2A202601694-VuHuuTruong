@@ -31,6 +31,13 @@ def fallback_mode() -> bool:
 
 def call(method: str, url: str, timeout: float = TIMEOUT, **kwargs):
     """Gọi HTTP và biến lỗi kết nối thành thông báo dễ hiểu thay vì traceback."""
+    if fallback_mode():
+        from fastapi.testclient import TestClient
+        from app import main as main_module
+        client = TestClient(main_module.app, raise_server_exceptions=False)
+        parsed_path = "/" + url.split("/", 3)[-1] if url.count("/") >= 3 else "/"
+        return client.request(method, parsed_path, **kwargs)
+
     try:
         return httpx.request(method, url, timeout=timeout, **kwargs)
     except httpx.HTTPError as err:
